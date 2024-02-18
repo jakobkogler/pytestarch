@@ -36,181 +36,20 @@ class RuleConfiguration:
     should_only: bool = False
     should_not: bool = False
     except_present: bool = False
-    import_: bool = None
+    import_: Optional[bool] = None
     rule_object_anything: bool = False
+    rule_matcher_class: Callable[
+        [ModuleRequirement, BehaviorRequirement], RuleMatcher
+    ] = DefaultRuleMatcher
 
 
-class Rule(
-    DependencySpecification,
-    RuleBase,
-    BehaviorSpecification,
-    RuleObject,
-    RuleSubject,
-    RuleApplier,
-):
-    """Represents an architectural rule of the form
-    Module1 [verb, such as 'should'] [import type, such as 'import'] Module2
-    """
-
-    def __init__(
-        self,
-        rule_matcher_class: Callable[
-            [ModuleRequirement, BehaviorRequirement], RuleMatcher
-        ] = DefaultRuleMatcher,
-    ) -> None:
-        self._rule_matcher_class = rule_matcher_class
-        self._modules_to_check_to_be_specified_next = None
-        self._configuration = RuleConfiguration()
+@dataclass
+class ConfigurationMixin:
+    _configuration: RuleConfiguration
 
     @property
     def rule_subjects(self) -> Optional[List[ModuleFilter]]:
         return self._configuration.modules_to_check
-
-    def modules_that(self) -> RuleSubject:
-        self._modules_to_check_to_be_specified_next = True
-        return self
-
-    def are_sub_modules_of(
-        self, modules: Union[str, List[str]]
-    ) -> BehaviorSpecification:
-        self._set_modules(modules, lambda name: ModuleFilter(parent_module=name))
-        return self
-
-    def are_named(self, names: Union[str, List[str]]) -> BehaviorSpecification:
-        self._set_modules(names, lambda name: ModuleFilter(name=name))
-        return self
-
-    @deprecated
-    def have_name_containing(
-        self, partial_names: Union[str, List[str]]
-    ) -> BehaviorSpecification:
-        self._set_modules(
-            partial_names,
-            lambda name: ModuleFilter(
-                name=convert_partial_match_to_regex(name), regex=True
-            ),
-        )
-        return self
-
-    def have_name_matching(
-        self,
-        regex: str,
-    ) -> BehaviorSpecification:
-        self._set_modules(regex, lambda name: ModuleFilter(name=name, regex=True))
-        return self
-
-    def _set_modules(
-        self,
-        module_names: Union[str, List[str]],
-        create_module_fn: Callable[[str], ModuleFilter],
-    ) -> None:
-        if self._modules_to_check_to_be_specified_next is None:
-            raise ImproperlyConfigured("Specify a RuleSubject or RuleObject first.")
-
-        if isinstance(module_names, str):
-            module_names = [module_names]
-
-        modules = [create_module_fn(n) for n in module_names]
-        if self._modules_to_check_to_be_specified_next:
-            self._configuration.modules_to_check = modules
-        else:
-            self._configuration.modules_to_check_against = modules
-
-    def _add_modules(self, modules: List[Tuple[str, bool]]) -> BehaviorSpecification:
-        module_names = []
-        module_creation_fn = []
-
-        for module, name_is_regex in modules:
-            module_names.append(module)
-            module_creation_fn.append(
-                lambda name: ModuleFilter(name=name, regex=name_is_regex)
-            )
-
-        self._append_modules(module_names, module_creation_fn)
-        return self
-
-    def _append_modules(
-        self,
-        module_names: List[str],
-        create_module_fns: List[Callable[[str], ModuleFilter]],
-    ) -> None:
-        modules = [fn(n) for n, fn in zip(module_names, create_module_fns)]
-        if self._modules_to_check_to_be_specified_next:
-            if self._configuration.modules_to_check is None:
-                self._configuration.modules_to_check = []
-
-            self._configuration.modules_to_check.extend(modules)
-        else:
-            if self._configuration.modules_to_check_against is None:
-                self._configuration.modules_to_check_against = []
-
-            self._configuration.modules_to_check_against.extend(modules)
-
-    def should(self) -> DependencySpecification:
-        self._configuration.should = True
-        return self
-
-    def should_only(self) -> DependencySpecification:
-        self._configuration.should_only = True
-        return self
-
-    def should_not(self) -> DependencySpecification:
-        self._configuration.should_not = True
-        return self
-
-    def import_modules_that(self) -> RuleObject:
-        self._configuration.import_ = True
-        self._modules_to_check_to_be_specified_next = False
-        return self
-
-    def be_imported_by_modules_that(self) -> RuleObject:
-        self._configuration.import_ = False
-        self._modules_to_check_to_be_specified_next = False
-        return self
-
-    def import_modules_except_modules_that(self) -> RuleObject:
-        self._configuration.import_ = True
-        self._configuration.except_present = True
-        self._modules_to_check_to_be_specified_next = False
-        return self
-
-    def be_imported_by_modules_except_modules_that(self) -> RuleObject:
-        self._configuration.import_ = False
-        self._configuration.except_present = True
-        self._modules_to_check_to_be_specified_next = False
-        return self
-
-    def import_anything(self) -> RuleApplier:
-        self._configuration.rule_object_anything = True
-        self.import_modules_that()
-        return self
-
-    def be_imported_by_anything(self) -> RuleApplier:
-        self._configuration.rule_object_anything = True
-        self.be_imported_by_modules_that()
-        return self
-
-    def assert_applies(self, evaluable: EvaluableArchitecture) -> None:
-        self._configuration = self._convert_aliases(self._configuration)
-        self._assert_required_configuration_present()
-
-        matcher = self._prepare_rule_matcher()
-        matcher.match(evaluable)
-
-    def _prepare_rule_matcher(self) -> RuleMatcher:
-        module_requirement = ModuleRequirement(
-            self._configuration.modules_to_check,
-            self._configuration.modules_to_check_against,
-            self._configuration.import_,
-        )
-        behavior_requirement = BehaviorRequirement(
-            self._configuration.should,
-            self._configuration.should_only,
-            self._configuration.should_not,
-            self._configuration.except_present,
-        )
-
-        return self._rule_matcher_class(module_requirement, behavior_requirement)
 
     def __str__(self) -> str:
         self._assert_required_configuration_present()
@@ -249,6 +88,205 @@ class Rule(
 
     def _get_module_name(self, module: ModuleFilter) -> str:
         return module.name if module.name is not None else module.parent_module
+
+    def _set_modules(
+        self,
+        module_names: Union[str, List[str]],
+        create_module_fn: Callable[[str], ModuleFilter],
+        modules_to_check: bool,
+    ) -> None:
+        if isinstance(module_names, str):
+            module_names = [module_names]
+
+        modules = [create_module_fn(n) for n in module_names]
+        if modules_to_check:
+            self._configuration.modules_to_check = modules
+        else:
+            self._configuration.modules_to_check_against = modules
+
+    def _add_modules(self, modules: List[Tuple[str, bool]]) -> BehaviorSpecification:
+        module_names = []
+        module_creation_fn = []
+
+        for module, name_is_regex in modules:
+            module_names.append(module)
+            module_creation_fn.append(
+                lambda name: ModuleFilter(name=name, regex=name_is_regex)
+            )
+
+        self._append_modules(module_names, module_creation_fn)
+        return self
+
+    def _append_modules(
+        self,
+        module_names: List[str],
+        create_module_fns: List[Callable[[str], ModuleFilter]],
+    ) -> None:
+        modules = [fn(n) for n, fn in zip(module_names, create_module_fns)]
+        if self._modules_to_check_to_be_specified_next:
+            if self._configuration.modules_to_check is None:
+                self._configuration.modules_to_check = []
+
+            self._configuration.modules_to_check.extend(modules)
+        else:
+            if self._configuration.modules_to_check_against is None:
+                self._configuration.modules_to_check_against = []
+
+            self._configuration.modules_to_check_against.extend(modules)
+
+
+class Rule(ConfigurationMixin, RuleBase):
+    """Represents an architectural rule of the form
+    Module1 [verb, such as 'should'] [import type, such as 'import'] Module2
+    """
+
+    def __init__(
+        self,
+        rule_matcher_class: Callable[
+            [ModuleRequirement, BehaviorRequirement], RuleMatcher
+        ] = DefaultRuleMatcher,
+    ) -> None:
+        self._configuration = RuleConfiguration(rule_matcher_class=rule_matcher_class)
+
+    def modules_that(self) -> RuleSubject:
+        return _RuleSubject(self._configuration)
+
+
+class _RuleSubject(ConfigurationMixin, RuleSubject):
+    def are_sub_modules_of(
+        self, modules: Union[str, List[str]]
+    ) -> BehaviorSpecification:
+        self._set_modules(modules, lambda name: ModuleFilter(parent_module=name), True)
+        return _BehaviorSpecification(self._configuration)
+
+    def are_named(self, names: Union[str, List[str]]) -> BehaviorSpecification:
+        self._set_modules(names, lambda name: ModuleFilter(name=name), True)
+        return _BehaviorSpecification(self._configuration)
+
+    @deprecated
+    def have_name_containing(
+        self, partial_names: Union[str, List[str]]
+    ) -> BehaviorSpecification:
+        self._set_modules(
+            partial_names,
+            lambda name: ModuleFilter(
+                name=convert_partial_match_to_regex(name), regex=True
+            ),
+            True,
+        )
+        return _BehaviorSpecification(self._configuration)
+
+    def have_name_matching(
+        self,
+        regex: str,
+    ) -> BehaviorSpecification:
+        self._set_modules(regex, lambda name: ModuleFilter(name=name, regex=True), True)
+        return _BehaviorSpecification(self._configuration)
+
+
+class _RuleObject(ConfigurationMixin, RuleObject):
+    def are_sub_modules_of(self, modules: Union[str, List[str]]) -> RuleApplier:
+        self._set_modules(modules, lambda name: ModuleFilter(parent_module=name), False)
+        return _RuleApplier(self._configuration)
+
+    def are_named(self, names: Union[str, List[str]]) -> RuleApplier:
+        self._set_modules(names, lambda name: ModuleFilter(name=name), False)
+        return _RuleApplier(self._configuration)
+
+    @deprecated
+    def have_name_containing(self, partial_names: Union[str, List[str]]) -> RuleApplier:
+        self._set_modules(
+            partial_names,
+            lambda name: ModuleFilter(
+                name=convert_partial_match_to_regex(name), regex=True
+            ),
+            False,
+        )
+        return _RuleApplier(self._configuration)
+
+    def have_name_matching(
+        self,
+        regex: str,
+    ) -> RuleApplier:
+        self._set_modules(
+            regex, lambda name: ModuleFilter(name=name, regex=True), False
+        )
+        return _RuleApplier(self._configuration)
+
+
+class _BehaviorSpecification(ConfigurationMixin, BehaviorSpecification):
+    def should(self) -> DependencySpecification:
+        self._configuration.should = True
+        return _DependencySpecification(self._configuration)
+
+    def should_only(self) -> DependencySpecification:
+        self._configuration.should_only = True
+        return _DependencySpecification(self._configuration)
+
+    def should_not(self) -> DependencySpecification:
+        self._configuration.should_not = True
+        return _DependencySpecification(self._configuration)
+
+
+class _DependencySpecification(ConfigurationMixin, DependencySpecification):
+    def import_modules_that(self) -> RuleObject:
+        self._configuration.import_ = True
+        self._modules_to_check_to_be_specified_next = False
+        return _RuleObject(self._configuration)
+
+    def be_imported_by_modules_that(self) -> RuleObject:
+        self._configuration.import_ = False
+        self._modules_to_check_to_be_specified_next = False
+        return _RuleObject(self._configuration)
+
+    def import_modules_except_modules_that(self) -> RuleObject:
+        self._configuration.import_ = True
+        self._configuration.except_present = True
+        self._modules_to_check_to_be_specified_next = False
+        return _RuleObject(self._configuration)
+
+    def be_imported_by_modules_except_modules_that(self) -> RuleObject:
+        self._configuration.import_ = False
+        self._configuration.except_present = True
+        self._modules_to_check_to_be_specified_next = False
+        return _RuleObject(self._configuration)
+
+    def import_anything(self) -> RuleApplier:
+        self._configuration.rule_object_anything = True
+        self.import_modules_that()
+        return _RuleApplier(self._configuration)
+
+    def be_imported_by_anything(self) -> RuleApplier:
+        self._configuration.rule_object_anything = True
+        self.be_imported_by_modules_that()
+        return _RuleApplier(self._configuration)
+
+
+class _RuleApplier(ConfigurationMixin, RuleApplier):
+    def assert_applies(self, evaluable: EvaluableArchitecture) -> None:
+        self._configuration = self._convert_aliases(self._configuration)
+        self._assert_required_configuration_present()
+
+        matcher = self._prepare_rule_matcher()
+        matcher.match(evaluable)
+
+    def _prepare_rule_matcher(self) -> RuleMatcher:
+        # TODO: ors
+        module_requirement = ModuleRequirement(
+            self._configuration.modules_to_check,
+            self._configuration.modules_to_check_against,
+            self._configuration.import_,
+        )
+        behavior_requirement = BehaviorRequirement(
+            self._configuration.should,
+            self._configuration.should_only,
+            self._configuration.should_not,
+            self._configuration.except_present,
+        )
+
+        return self._configuration.rule_matcher_class(
+            module_requirement, behavior_requirement
+        )
 
     def _assert_required_configuration_present(self) -> None:
         behavior_missing = not any(

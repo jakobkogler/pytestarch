@@ -3,8 +3,7 @@ from __future__ import annotations
 import pytest
 from query_language.rule.conftest import MODULE_A
 
-from pytestarch import Rule
-from pytestarch.query_language.rule import RuleConfiguration
+from pytestarch.query_language.rule import RuleConfiguration, _RuleApplier
 
 config_alias_test_cases = [
     [
@@ -129,5 +128,5 @@ def test_aliases_converted(
     config_with_alias: RuleConfiguration,
     expected_config: RuleConfiguration,
 ) -> None:
-    converted_config = Rule._convert_aliases(config_with_alias)
+    converted_config = _RuleApplier._convert_aliases(config_with_alias)
     assert converted_config == expected_config

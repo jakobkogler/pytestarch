@@ -8,6 +8,7 @@ from pytestarch.eval_structure.evaluable_architecture import (
     EvaluableArchitecture,
     ModuleFilter,
 )
+from pytestarch.query_language.base_language import RuleApplier
 from pytestarch.query_language.exceptions import ImproperlyConfigured
 from pytestarch.query_language.rule import RuleConfiguration
 
@@ -100,11 +101,13 @@ def test_partially_configured_rule_raises_error(
     assert True
 
 
-def assert_rule_applies(rule: Rule, evaluable: EvaluableArchitecture) -> None:
+def assert_rule_applies(rule: RuleApplier, evaluable: EvaluableArchitecture) -> None:
     rule.assert_applies(evaluable)
 
 
-def assert_rule_does_not_apply(rule: Rule, evaluable: EvaluableArchitecture) -> None:
+def assert_rule_does_not_apply(
+    rule: RuleApplier, evaluable: EvaluableArchitecture
+) -> None:
     with pytest.raises(AssertionError):
         rule.assert_applies(evaluable)
 
